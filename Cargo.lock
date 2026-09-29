@@ -4,8 +4,10 @@ version = 4
 
 [[package]]
 name = "Brave"
-version = "8037.58.0"
+version = "195.104.0"
 dependencies = [
+ "core-graphics",
+ "rand 0.8.8",
  "serde",
  "serde_json",
  "tao",
