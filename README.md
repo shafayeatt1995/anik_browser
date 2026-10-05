@@ -15,7 +15,7 @@ This browser enforces 4 static parameters that **never change**, regardless of t
 ---
 
 ## Architecture & Features
-- **Real Native Web Engine**: The browser view loads websites directly into native webviews without iframes or proxy wrappers. All cookies, sessions, authentication headers, and CSRF tokens work identically to standard Brave / Chromium.
+- **Real Native Web Engine**: The browser view loads websites directly into native webviews without iframes or proxy wrappers. All cookies, sessions, authentication headers, and CSRF tokens work identically to standard Chromium / Brave Browser.
 - **Permanent Title Locking**: Window title is enforced to `Bluevy Admin - Brave Browser` and cannot be modified by any web page.
 - **Top Multi-Tabs Bar**: Tab system supporting multiple concurrent tabs, closing tabs, and switching tabs.
 - **Top Right Auto Control (`F8`)**:
@@ -23,7 +23,7 @@ This browser enforces 4 static parameters that **never change**, regardless of t
   - Naturally glides the actual PC mouse cursor along human-like Bézier curves.
   - Smooth page scrolling, random text selection, and empty background clicking.
   - Synchronous human-cadence typing in the address bar (a-z, 0-9) from realistic dictionary queries without submitting / pressing Enter.
-  - Randomized action pauses between **5 and 60 seconds**.
+  - Randomized action pauses between **5 and 30 seconds** (changes after every event).
 - **macOS Activity Tracker Compatibility**:
   - Bundled as `Brave.app` with `com.brave.Browser` bundle identifier and version `195.104` for RescueTime tracking.
 

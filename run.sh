@@ -26,7 +26,7 @@ cat << 'PLIST' > "$APP_DIR/Contents/Info.plist"
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>195.104</string>
+    <string>194.104</string>
     <key>CFBundleVersion</key>
     <string>195.104</string>
     <key>NSHighResolutionCapable</key>

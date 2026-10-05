@@ -1,25 +1,5 @@
-use core_graphics::event::{
-    CGEvent, CGEventTapLocation, CGEventType, CGMouseButton,
-};
-use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 use core_graphics::geometry::CGPoint;
 
-#[link(name = "CoreGraphics", kind = "framework")]
-extern "C" {
-    fn CGWarpMouseCursorPosition(new_cursor_position: CGPoint) -> i32;
-    fn CGEventCreate(source: *const std::ffi::c_void) -> *mut std::ffi::c_void;
-    fn CGEventGetLocation(event: *const std::ffi::c_void) -> CGPoint;
-    fn CGEventCreateScrollWheelEvent2(
-        source: *const std::ffi::c_void,
-        units: u32,
-        wheel_count: u32,
-        wheel1: i32,
-        wheel2: i32,
-        wheel3: i32,
-    ) -> *mut std::ffi::c_void;
-    fn CGEventPost(tap: u32, event: *const std::ffi::c_void);
-    fn CFRelease(cf: *const std::ffi::c_void);
-}
 use rand::Rng;
 use std::collections::HashMap;
 use std::io::Write;
@@ -38,10 +18,16 @@ use tao::{
 use wry::{Rect, WebView, WebViewBuilder};
 
 // 4 Permanent & Static Metadata Values
-pub const APP_NAME: &str = "Google Chrome";
-pub const WINDOW_TITLE: &str = "Bluevy Admin - Google Chrome";
-pub const APP_VERSION: &str = "8037.58";
+pub const APP_NAME: &str = "Brave Browser";
+pub const WINDOW_TITLE: &str = "Bluevy Admin - Brave Browser";
+pub const APP_VERSION: &str = "195.104";
 pub const EXTENDED_INFO: &str = "http://localhost:3001/workspace/DataList?id=9b0f6bcb-c5d1-4c86-a4";
+
+mod toolbar;
+use toolbar::build_toolbar_html;
+
+mod mouse_control;
+use mouse_control::{click_mouse_at, get_current_mouse_position, human_like_move_mouse, scroll_mouse};
 
 // Real Brave Browser / Chrome User Agent for direct native browsing
 const CHROME_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36";
@@ -55,6 +41,7 @@ pub enum UserBrowserEvent {
     TriggerAutoAction,
     TypeChar(char),
     ClearAddressbar,
+    UpdateCountdown(u32, String),
 }
 
 fn get_macos_clipboard() -> String {
@@ -82,539 +69,6 @@ pub struct AppWindowRect {
     pub y: f64,
     pub width: f64,
     pub height: f64,
-}
-
-fn build_toolbar_html(initial_tab_id: u32, initial_url: &str) -> String {
-    format!(
-        r#"<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    * {{
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    }}
-    body {{
-      background: #1e1f22;
-      color: #e8eaed;
-      height: 88px;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      border-bottom: 1px solid #3c4043;
-      user-select: none;
-      -webkit-user-select: none;
-    }}
-
-    /* Top Tabs Bar */
-    .tabs-bar {{
-      height: 36px;
-      background: #18191c;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 10px 0 10px;
-      border-bottom: 1px solid #2b2a33;
-      flex-shrink: 0;
-    }}
-
-    .tabs-left-section {{
-      display: flex;
-      align-items: flex-end;
-      gap: 4px;
-      height: 100%;
-      flex: 1;
-      overflow-x: auto;
-    }}
-    .tabs-left-section::-webkit-scrollbar {{
-      display: none;
-    }}
-
-    .tabs-list {{
-      display: flex;
-      align-items: flex-end;
-      gap: 4px;
-      height: 100%;
-    }}
-
-    .tab {{
-      height: 31px;
-      min-width: 140px;
-      max-width: 220px;
-      background: #232428;
-      color: #9aa0a6;
-      border-radius: 8px 8px 0 0;
-      padding: 0 10px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 12px;
-      cursor: pointer;
-      position: relative;
-      transition: background 0.15s, color 0.15s;
-      border-top: 2px solid transparent;
-    }}
-    .tab:hover {{
-      background: #2a2b30;
-      color: #e8eaed;
-    }}
-    .tab.active {{
-      background: #2b2a33;
-      color: #ffffff;
-      font-weight: 500;
-      border-top: 2px solid #ff5a00; /* Brave orange accent */
-    }}
-    .tab-icon {{
-      width: 14px;
-      height: 14px;
-      flex-shrink: 0;
-      fill: currentColor;
-      opacity: 0.8;
-    }}
-    .tab-title {{
-      flex: 1;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      font-size: 11.5px;
-    }}
-    .tab-close {{
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 11px;
-      color: #9aa0a6;
-      flex-shrink: 0;
-    }}
-    .tab-close:hover {{
-      background: rgba(255, 255, 255, 0.15);
-      color: #ffffff;
-    }}
-
-    .new-tab-btn {{
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      background: transparent;
-      border: none;
-      color: #9aa0a6;
-      font-size: 18px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 2px;
-      transition: background 0.15s, color 0.15s;
-      flex-shrink: 0;
-    }}
-    .new-tab-btn:hover {{
-      background: rgba(255, 255, 255, 0.12);
-      color: #ffffff;
-    }}
-
-    /* Top Right Controls & Auto Mode Button */
-    .tabs-right-section {{
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-left: 12px;
-      flex-shrink: 0;
-    }}
-
-    .auto-mode-btn {{
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 12px;
-      border-radius: 14px;
-      font-size: 11.5px;
-      font-weight: 600;
-      cursor: pointer;
-      border: 1px solid #4a4d52;
-      background: #252830;
-      color: #bdc1c6;
-      transition: all 0.2s ease;
-    }}
-    .auto-mode-btn.active {{
-      background: #1b5e20;
-      border-color: #4caf50;
-      color: #a5d6a7;
-      box-shadow: 0 0 10px rgba(76, 175, 80, 0.4);
-    }}
-    .status-indicator {{
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: #757575;
-    }}
-    .auto-mode-btn.active .status-indicator {{
-      background: #00e676;
-      box-shadow: 0 0 6px #00e676;
-    }}
-    .key-badge {{
-      background: rgba(255, 255, 255, 0.12);
-      padding: 1px 5px;
-      border-radius: 4px;
-      font-size: 10px;
-      font-family: monospace;
-    }}
-    .extended-info-pill {{
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      background: #23252a;
-      border: 1px solid #3c4043;
-      padding: 3px 10px;
-      border-radius: 12px;
-      font-size: 11px;
-      color: #9aa0a6;
-      max-width: 420px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }}
-    .extended-info-pill strong {{
-      color: #8ab4f8;
-      font-weight: 600;
-      flex-shrink: 0;
-    }}
-    .extended-info-pill span {{
-      color: #bdc1c6;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-family: monospace;
-    }}
-
-    /* Navigation Bar */
-    .nav-bar {{
-      height: 52px;
-      display: flex;
-      align-items: center;
-      padding: 0 10px;
-      gap: 8px;
-      background: #2b2a33;
-      flex-shrink: 0;
-    }}
-    .nav-btn {{
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      background: transparent;
-      border: none;
-      color: #e8eaed;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: background 0.15s;
-      flex-shrink: 0;
-    }}
-    .nav-btn:hover {{
-      background: rgba(255, 255, 255, 0.12);
-    }}
-    .nav-btn svg {{
-      width: 17px;
-      height: 17px;
-      fill: currentColor;
-    }}
-
-    .url-box-wrapper {{
-      flex: 1;
-      height: 36px;
-      background: #1e1f22;
-      border-radius: 18px;
-      display: flex;
-      align-items: center;
-      padding: 0 12px;
-      border: 1px solid #3c4043;
-      transition: border-color 0.15s, box-shadow 0.15s;
-    }}
-    .url-box-wrapper:focus-within {{
-      border-color: #ff5a00;
-      box-shadow: 0 0 0 2px rgba(255, 90, 0, 0.25);
-    }}
-    .lock-icon {{
-      font-size: 13px;
-      margin-right: 8px;
-      color: #ff5a00;
-      user-select: none;
-    }}
-    .url-input {{
-      flex: 1;
-      height: 100%;
-      background: transparent;
-      border: none;
-      outline: none;
-      color: #ffffff;
-      font-size: 13px;
-      font-family: inherit;
-      user-select: text !important;
-      -webkit-user-select: text !important;
-    }}
-
-    .input-actions {{
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      margin-left: 6px;
-    }}
-    .mini-btn {{
-      background: rgba(255, 255, 255, 0.08);
-      color: #bdc1c6;
-      border: 1px solid #3c4043;
-      padding: 3px 8px;
-      border-radius: 10px;
-      font-size: 11px;
-      cursor: pointer;
-      font-weight: 500;
-      transition: background 0.15s, color 0.15s;
-    }}
-    .mini-btn:hover {{
-      background: rgba(255, 255, 255, 0.18);
-      color: #fff;
-    }}
-
-    .go-btn {{
-      background: #ff5a00;
-      color: #ffffff;
-      border: none;
-      padding: 0 14px;
-      height: 32px;
-      border-radius: 16px;
-      font-size: 12px;
-      cursor: pointer;
-      font-weight: 600;
-      transition: background 0.15s;
-      flex-shrink: 0;
-    }}
-    .go-btn:hover {{
-      background: #e04e00;
-    }}
-  </style>
-</head>
-<body>
-  <!-- Tabs Bar at Top -->
-  <div class="tabs-bar">
-    <div class="tabs-left-section">
-      <div class="tabs-list" id="tabs-list">
-        <div class="tab active" id="tab-{initial_tab_id}" onclick="switchTab({initial_tab_id})">
-          <svg class="tab-icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
-          <span class="tab-title" id="tab-title-{initial_tab_id}">New Tab</span>
-          <span class="tab-close" onclick="closeTab({initial_tab_id}, event)">✕</span>
-        </div>
-      </div>
-      <button class="new-tab-btn" title="New Tab" onclick="createNewTab()">+</button>
-    </div>
-
-    <!-- Top Right Corner Controls & Auto Mode Button -->
-    <div class="tabs-right-section">
-      <div class="extended-info-pill" title="Extended Info: {extended_info}">
-        <strong>Extended Info:</strong>
-        <span>{extended_info}</span>
-      </div>
-      <button class="auto-mode-btn" id="auto-btn" onclick="toggleAutoControl()" title="Toggle Auto Browsing (Keyboard shortcut: F8)">
-        <span class="status-indicator"></span>
-        <span id="auto-btn-text">Auto Control: OFF</span>
-        <span class="key-badge">F8</span>
-      </button>
-    </div>
-  </div>
-
-  <!-- Navigation Bar -->
-  <div class="nav-bar">
-    <button class="nav-btn" title="Back" onclick="sendAction('back')">
-      <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
-    </button>
-    <button class="nav-btn" title="Forward" onclick="sendAction('forward')">
-      <svg viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>
-    </button>
-    <button class="nav-btn" title="Reload" onclick="sendAction('reload')">
-      <svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
-    </button>
-    <button class="nav-btn" title="Home" onclick="sendAction('navigate', 'https://www.google.com')">
-      <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
-    </button>
-
-    <div class="url-box-wrapper">
-      <span class="lock-icon">🔒</span>
-      <input type="text" class="url-input" id="address" value="{url}" placeholder="Search or enter web address" spellcheck="false" autocomplete="off" />
-      <div class="input-actions">
-        <button class="mini-btn" title="Paste URL" onclick="handlePasteAction()">Paste</button>
-        <button class="mini-btn" title="Copy URL" onclick="handleCopyAction()">Copy</button>
-      </div>
-    </div>
-    <button class="go-btn" onclick="submitUrl()">Go</button>
-  </div>
-
-  <script>
-    const input = document.getElementById("address");
-    let activeTabId = {initial_tab_id};
-    let isAutoActive = false;
-
-    function sendAction(action, payload) {{
-      if (window.ipc) {{
-        window.ipc.postMessage(JSON.stringify({{ action: action, payload: payload }}));
-      }}
-    }}
-
-    function submitUrl() {{
-      const val = input.value.trim();
-      if (val) {{
-        sendAction("navigate", val);
-      }}
-    }}
-
-    function handlePasteAction() {{
-      sendAction("request_paste");
-    }}
-
-    function handleCopyAction() {{
-      const val = input.value;
-      if (val) {{
-        sendAction("set_clipboard", val);
-      }}
-    }}
-
-    function createNewTab() {{
-      sendAction("create_tab", "https://www.google.com");
-    }}
-
-    function switchTab(tabId) {{
-      activeTabId = tabId;
-      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-      const el = document.getElementById("tab-" + tabId);
-      if (el) el.classList.add("active");
-      sendAction("switch_tab", tabId.toString());
-    }}
-
-    function closeTab(tabId, e) {{
-      if (e) e.stopPropagation();
-      sendAction("close_tab", tabId.toString());
-    }}
-
-    function toggleAutoControl() {{
-      sendAction("toggle_auto_control", "");
-    }}
-
-    // Update UI state for Auto Mode
-    window.setAutoControlState = function(enabled) {{
-      isAutoActive = enabled;
-      const btn = document.getElementById("auto-btn");
-      const btnText = document.getElementById("auto-btn-text");
-      if (enabled) {{
-        btn.classList.add("active");
-        btnText.innerText = "Auto Control: ON";
-      }} else {{
-        btn.classList.remove("active");
-        btnText.innerText = "Auto Control: OFF";
-      }}
-    }};
-
-    // Called from Rust when tabs update
-    window.renderTabs = function(tabsArray, activeId, currentUrl) {{
-      activeTabId = activeId;
-      const list = document.getElementById("tabs-list");
-      list.innerHTML = "";
-
-      tabsArray.forEach(tab => {{
-        const div = document.createElement("div");
-        div.className = "tab" + (tab.id === activeId ? " active" : "");
-        div.id = "tab-" + tab.id;
-        div.onclick = () => switchTab(tab.id);
-
-        div.innerHTML = `
-          <svg class="tab-icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
-          <span class="tab-title" id="tab-title-${{tab.id}}">${{escapeHtml(tab.title)}}</span>
-          <span class="tab-close" onclick="closeTab(${{tab.id}}, event)">✕</span>
-        `;
-        list.appendChild(div);
-      }});
-
-      if (currentUrl) {{
-        input.value = currentUrl;
-      }}
-    }};
-
-    window.setAddress = function(url) {{
-      input.value = url;
-    }};
-
-    window.insertPaste = function(text) {{
-      if (!text) return;
-      const start = input.selectionStart || 0;
-      const end = input.selectionEnd || 0;
-      const current = input.value;
-      input.value = current.substring(0, start) + text + current.substring(end);
-      input.selectionStart = input.selectionEnd = start + text.length;
-      input.focus();
-    }};
-
-    window.clearAddressbar = function() {{
-      input.value = "";
-      input.focus();
-    }};
-
-    window.appendChar = function(ch) {{
-      input.value += ch;
-      input.focus();
-      // Ensure cursor stays at end without selecting or submitting
-      input.selectionStart = input.selectionEnd = input.value.length;
-    }};
-
-    function escapeHtml(str) {{
-      if (!str) return "New Tab";
-      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    }}
-
-    // Global document listener for F8 shortcut and keys
-    window.addEventListener("keydown", function(e) {{
-      if (e.key === "F8") {{
-        e.preventDefault();
-        toggleAutoControl();
-      }}
-    }});
-
-    input.addEventListener("keydown", function(e) {{
-      if (e.key === "F8") {{
-        e.preventDefault();
-        toggleAutoControl();
-        return;
-      }}
-
-      if (e.key === "Enter") {{
-        submitUrl();
-        return;
-      }}
-
-      if (e.metaKey || e.ctrlKey) {{
-        if (e.key.toLowerCase() === "v") {{
-          sendAction("request_paste");
-        }} else if (e.key.toLowerCase() === "c") {{
-          const sel = window.getSelection().toString();
-          if (sel) {{
-            sendAction("set_clipboard", sel);
-          }} else {{
-            sendAction("set_clipboard", input.value);
-          }}
-        }} else if (e.key.toLowerCase() === "a") {{
-          input.select();
-        }}
-      }}
-    }});
-  </script>
-</body>
-</html>"#,
-        initial_tab_id = initial_tab_id,
-        url = initial_url,
-        extended_info = EXTENDED_INFO
-    )
 }
 
 struct TabState {
@@ -706,181 +160,6 @@ window.__autoRandomAction = function() {
 };
 "#;
 
-// Get actual current mouse location on screen
-fn get_current_mouse_position() -> CGPoint {
-    unsafe {
-        let ev = CGEventCreate(std::ptr::null());
-        if !ev.is_null() {
-            let loc = CGEventGetLocation(ev);
-            CFRelease(ev);
-            return loc;
-        }
-    }
-    CGPoint::new(400.0, 400.0)
-}
-
-// Move mouse like a real human: Bézier curvature, speed variations, and slight overshoot
-fn human_like_move_mouse(
-    start: CGPoint,
-    end: CGPoint,
-    auto_active: &Arc<AtomicBool>,
-) {
-    let mut rng = rand::thread_rng();
-    let dx = end.x - start.x;
-    let dy = end.y - start.y;
-    let dist = (dx * dx + dy * dy).sqrt();
-
-    if dist < 2.0 {
-        return;
-    }
-
-    // Determine movement style randomly:
-    // 0: Fast flick, 1: Smooth leisurely glide, 2: Wandering/hesitant curve
-    let style = rng.gen_range(0..3);
-
-    // Number of intermediate steps based on distance & style
-    let steps = match style {
-        0 => (dist / 14.0).clamp(18.0, 45.0) as usize, // fast move
-        1 => (dist / 7.0).clamp(35.0, 90.0) as usize,  // smooth, steady move
-        _ => (dist / 5.0).clamp(50.0, 130.0) as usize, // relaxed human exploration
-    };
-
-    // Calculate perpendicular offset for realistic natural hand curvature
-    let perp_x = -dy / dist;
-    let perp_y = dx / dist;
-
-    // Random curve intensity (sometimes almost straight, sometimes prominently curved)
-    let curve_mag = if rng.gen_bool(0.25) {
-        // Nearly straight line with subtle micro-deviations
-        rng.gen_range(-15.0..15.0)
-    } else {
-        // Curvy arc
-        rng.gen_range(-1.0..1.0) * dist.min(180.0) * 0.45
-    };
-
-    // Control point 1 (around 25% - 40% of the path)
-    let cp1_t = rng.gen_range(0.25..0.45);
-    let cp1_x = start.x + dx * cp1_t + perp_x * curve_mag + rng.gen_range(-15.0..15.0);
-    let cp1_y = start.y + dy * cp1_t + perp_y * curve_mag + rng.gen_range(-15.0..15.0);
-
-    // Control point 2 (around 60% - 80% of the path, with natural counter-balance or continuation)
-    let cp2_t = rng.gen_range(0.60..0.85);
-    let counter_curv = if rng.gen_bool(0.4) { -curve_mag * 0.5 } else { curve_mag * 0.7 };
-    let cp2_x = start.x + dx * cp2_t + perp_x * counter_curv + rng.gen_range(-15.0..15.0);
-    let cp2_y = start.y + dy * cp2_t + perp_y * counter_curv + rng.gen_range(-15.0..15.0);
-
-    let base_sleep_ms = match style {
-        0 => rng.gen_range(5..10),  // faster updates
-        1 => rng.gen_range(10..18), // standard smooth updates
-        _ => rng.gen_range(14..24), // slow, deliberate movement
-    };
-
-    if let Ok(source) = CGEventSource::new(CGEventSourceStateID::CombinedSessionState) {
-        for i in 1..=steps {
-            if !auto_active.load(Ordering::SeqCst) {
-                break;
-            }
-
-            let t = i as f64 / steps as f64;
-
-            // Human acceleration curve: slow start, quick sweep, decelerate at destination
-            let eased_t = if style == 0 {
-                // Quick start then deceleration
-                t * (2.0 - t)
-            } else {
-                // Smooth bell-shaped acceleration (SmoothStep / Sigmoidal)
-                t * t * (3.0 - 2.0 * t)
-            };
-
-            // Cubic Bézier calculation: B(t) = (1-t)^3*P0 + 3(1-t)^2*t*P1 + 3(1-t)*t^2*P2 + t^3*P3
-            let u = 1.0 - eased_t;
-            let tt = eased_t * eased_t;
-            let uu = u * u;
-            let uuu = uu * u;
-            let ttt = tt * eased_t;
-
-            let cur_x = uuu * start.x
-                + 3.0 * uu * eased_t * cp1_x
-                + 3.0 * u * tt * cp2_x
-                + ttt * end.x;
-
-            let cur_y = uuu * start.y
-                + 3.0 * uu * eased_t * cp1_y
-                + 3.0 * u * tt * cp2_y
-                + ttt * end.y;
-
-            // Add subtle micro-jitter like a real human hand
-            let jitter_x = if i < steps - 3 { rng.gen_range(-0.7..0.7) } else { 0.0 };
-            let jitter_y = if i < steps - 3 { rng.gen_range(-0.7..0.7) } else { 0.0 };
-
-            let pt = CGPoint::new(cur_x + jitter_x, cur_y + jitter_y);
-
-            unsafe {
-                let _ = CGWarpMouseCursorPosition(pt);
-            }
-
-            if let Ok(move_ev) = CGEvent::new_mouse_event(
-                source.clone(),
-                CGEventType::MouseMoved,
-                pt,
-                CGMouseButton::Left,
-            ) {
-                move_ev.post(CGEventTapLocation::HID);
-            }
-
-            // Variable sleep for non-robotic timing
-            let jitter_sleep = rng.gen_range(0..4);
-            thread::sleep(Duration::from_millis((base_sleep_ms + jitter_sleep).max(2)));
-        }
-
-        // Ensure final exact target position
-        unsafe {
-            let _ = CGWarpMouseCursorPosition(end);
-        }
-    }
-}
-
-// Simulate mouse click at given screen coordinates
-fn click_mouse_at(point: CGPoint) {
-    if let Ok(source) = CGEventSource::new(CGEventSourceStateID::CombinedSessionState) {
-        if let Ok(down) = CGEvent::new_mouse_event(
-            source.clone(),
-            CGEventType::LeftMouseDown,
-            point,
-            CGMouseButton::Left,
-        ) {
-            down.post(CGEventTapLocation::HID);
-        }
-        thread::sleep(Duration::from_millis(40));
-        if let Ok(up) = CGEvent::new_mouse_event(
-            source,
-            CGEventType::LeftMouseUp,
-            point,
-            CGMouseButton::Left,
-        ) {
-            up.post(CGEventTapLocation::HID);
-        }
-    }
-}
-
-// Simulate scroll wheel event using macOS CoreGraphics API
-fn scroll_mouse(delta_y: i32) {
-    unsafe {
-        let scroll_ev = CGEventCreateScrollWheelEvent2(
-            std::ptr::null(),
-            0, // kCGScrollEventUnitPixel = 0, or kCGScrollEventUnitLine = 1
-            1,
-            delta_y,
-            0,
-            0,
-        );
-        if !scroll_ev.is_null() {
-            CGEventPost(0 /* kCGHIDEventTap */, scroll_ev);
-            CFRelease(scroll_ev);
-        }
-    }
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("==================================================");
     println!("Application Name : {}", APP_NAME);
@@ -956,14 +235,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Auto Control State flags
     let auto_control_active = Arc::new(AtomicBool::new(false));
 
-    // Window position & size shared for mouse bounds
+    // Window position & size shared for mouse bounds (in logical points matching macOS CoreGraphics mouse coordinates)
+    let scale_factor = window.scale_factor();
     let initial_pos = window.outer_position().unwrap_or(tao::dpi::PhysicalPosition::new(100, 100));
     let initial_size = window.inner_size();
     let app_window_rect = Arc::new(Mutex::new(AppWindowRect {
-        x: initial_pos.x as f64,
-        y: initial_pos.y as f64,
-        width: initial_size.width as f64,
-        height: initial_size.height as f64,
+        x: initial_pos.x as f64 / scale_factor,
+        y: initial_pos.y as f64 / scale_factor,
+        width: initial_size.width as f64 / scale_factor,
+        height: initial_size.height as f64 / scale_factor,
     }));
 
     let toolbar_view = WebViewBuilder::new()
@@ -1114,6 +394,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         thread::spawn(move || {
             let mut rng = rand::thread_rng();
+            let mut next_action_choice = rng.gen_range(0..4);
 
             loop {
                 thread::sleep(Duration::from_millis(500));
@@ -1129,105 +410,167 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 };
 
-                // Browser content area on screen
-                let min_x = rect.x + 35.0;
-                let max_x = (rect.x + rect.width - 35.0).max(min_x + 50.0);
-                let min_y = rect.y + TOOLBAR_HEIGHT + 35.0;
-                let max_y = (rect.y + rect.height - 35.0).max(min_y + 50.0);
+                // Calculate browser webview viewport bounds strictly (safe inner screen area)
+                // Margins: 60px away from sides and bottom, and safely below the top toolbar (88px + 60px)
+                let min_x = rect.x + 60.0;
+                let max_x = (rect.x + rect.width - 60.0).max(min_x + 50.0);
+                let min_y = rect.y + TOOLBAR_HEIGHT + 60.0;
+                let max_y = (rect.y + rect.height - 60.0).max(min_y + 50.0);
+
+                // Helper closure to clamp any point strictly inside the safe browser viewport
+                let clamp_to_viewport = |pt: CGPoint| -> CGPoint {
+                    let clamped_x = pt.x.clamp(min_x, max_x);
+                    let clamped_y = pt.y.clamp(min_y, max_y);
+                    CGPoint::new(clamped_x, clamped_y)
+                };
 
                 // 1. Get ACTUAL current mouse position on the screen
                 let current_mouse_pt = get_current_mouse_position();
 
-                // 2. Select action type:
-                // Either Human Mouse Motion + Page Interaction OR Natural Keyboard Typing into Addressbar
-                // These are strictly synchronous and never execute at the same time.
-                let mode_choice = rng.gen_range(0..10);
+                // 2. Execute scheduled action:
+                let action_choice = next_action_choice;
 
-                if mode_choice < 7 {
-                    // MODE A: Human Mouse Movement & Page Interactions
-                    // 1. Move real mouse to random position within browser web content area
-                    let target_x = rng.gen_range(min_x..max_x);
-                    let target_y = rng.gen_range(min_y..max_y);
-                    let target_pt = CGPoint::new(target_x, target_y);
-
-                    // Move mouse seamlessly from its current real position along a human-like Bézier curve
-                    human_like_move_mouse(current_mouse_pt, target_pt, &auto_active);
-
-                    if !auto_active.load(Ordering::SeqCst) {
-                        continue;
+                match action_choice {
+                    0 => {
+                        // Action 0: Mouse Movement strictly inside browser safe viewport
+                        let target_x = rng.gen_range(min_x..max_x);
+                        let target_y = rng.gen_range(min_y..max_y);
+                        let target_pt = CGPoint::new(target_x, target_y);
+                        println!("[Auto Control] Action: Mouse Move to ({:.0}, {:.0}) [safe viewport]", target_x, target_y);
+                        human_like_move_mouse(current_mouse_pt, target_pt, &auto_active);
                     }
-
-                    let action_choice = rng.gen_range(0..10);
-                    if action_choice < 4 {
-                        // Smooth human-like scrolling (multiple small ticks)
-                        let total_ticks = rng.gen_range(3..12);
-                        let scroll_dir = if rng.gen_bool(0.75) { -1 } else { 1 };
+                    1 => {
+                        // Action 1: Scroll Page up or down naturally
+                        let scroll_dir = if rng.gen_bool(0.70) { -1 } else { 1 };
+                        let total_ticks = rng.gen_range(4..14);
+                        println!(
+                            "[Auto Control] Action: Scroll Page {}",
+                            if scroll_dir < 0 { "Down ⬇" } else { "Up ⬆" }
+                        );
                         for _ in 0..total_ticks {
                             if !auto_active.load(Ordering::SeqCst) {
                                 break;
                             }
                             scroll_mouse(scroll_dir * rng.gen_range(1..3));
-                            thread::sleep(Duration::from_millis(rng.gen_range(35..90)));
+                            thread::sleep(Duration::from_millis(rng.gen_range(30..80)));
                         }
-                    } else if action_choice < 8 {
-                        // Select random text on the webpage
-                        let _ = proxy_worker.send_event(UserBrowserEvent::TriggerAutoAction);
-                    } else {
-                        // Click an empty space on the webpage
-                        click_mouse_at(target_pt);
                     }
-                } else {
-                    // MODE B: Synchronous Natural Human Keyboard Typing in Address Bar (a-z, 0-9)
-                    // Real dictionary words / search queries
-                    const DICTIONARY_WORDS: &[&str] = &[
-                        "weather today", "github trending", "rust programming", "coolify dashboard",
-                        "news updates", "crypto market 2026", "travel destinations", "top movies",
-                        "tech gadgets", "hrm workspace", "chatgpt 5", "ai developments",
-                        "recipe ideas", "world clock", "sports scores", "flight tickets",
-                        "online shop 24", "system monitor", "finance tracker", "developer tools",
-                        "fast network", "cloud storage", "smart search", "browser speed",
-                        "music playlist 99", "best laptop 2026", "coffee shops near me", "code refactor"
-                    ];
-
-                    let word = DICTIONARY_WORDS[rng.gen_range(0..DICTIONARY_WORDS.len())];
-                    println!("[Auto Control] Synchronous Human Typing query: \"{}\"", word);
-
-                    // Clear address bar first for clean typing
-                    let _ = proxy_worker.send_event(UserBrowserEvent::ClearAddressbar);
-                    thread::sleep(Duration::from_millis(rng.gen_range(250..450)));
-
-                    // Type character by character at natural human typing cadence (80ms - 240ms)
-                    for ch in word.chars() {
-                        if !auto_active.load(Ordering::SeqCst) {
-                            break;
-                        }
-
-                        // Send character to address bar without pressing Enter
-                        let _ = proxy_worker.send_event(UserBrowserEvent::TypeChar(ch));
-
-                        // Realistic human typing cadence with occasional pause between words
-                        let key_delay = if ch == ' ' {
-                            rng.gen_range(160..320)
+                    2 => {
+                        // Action 2: Click / Select Text strictly inside browser safe viewport screen
+                        if rng.gen_bool(0.6) {
+                            println!("[Auto Control] Action: Select Text on page (internal viewport DOM)");
+                            let _ = proxy_worker.send_event(UserBrowserEvent::TriggerAutoAction);
                         } else {
-                            rng.gen_range(75..195)
-                        };
-                        thread::sleep(Duration::from_millis(key_delay));
+                            // Check if current mouse position is within the safe browser viewport screen
+                            let is_inside_viewport = current_mouse_pt.x >= min_x
+                                && current_mouse_pt.x <= max_x
+                                && current_mouse_pt.y >= min_y
+                                && current_mouse_pt.y <= max_y;
+
+                            let click_pt = if is_inside_viewport {
+                                clamp_to_viewport(current_mouse_pt)
+                            } else {
+                                // If cursor is outside the browser window or in another app,
+                                // ALWAYS glide the cursor inside the safe viewport before clicking!
+                                let safe_target = CGPoint::new(
+                                    rng.gen_range(min_x..max_x),
+                                    rng.gen_range(min_y..max_y),
+                                );
+                                human_like_move_mouse(current_mouse_pt, safe_target, &auto_active);
+                                safe_target
+                            };
+
+                            // Double check: NEVER click if coordinates are outside safe viewport bounds
+                            if click_pt.x >= min_x && click_pt.x <= max_x && click_pt.y >= min_y && click_pt.y <= max_y {
+                                println!(
+                                    "[Auto Control] Action: Click safe page area at ({:.0}, {:.0}) [strictly inside browser viewport]",
+                                    click_pt.x, click_pt.y
+                                );
+                                click_mouse_at(click_pt);
+                            } else {
+                                println!("[Auto Control] Safety guard: skipped click as coordinates were outside viewport");
+                            }
+                        }
+                    }
+                    _ => {
+                        // Action 3: Natural Human Keyboard Typing in Address Bar
+                        const DICTIONARY_WORDS: &[&str] = &[
+                            "weather today", "github trending", "rust programming", "coolify dashboard",
+                            "news updates", "crypto market 2026", "travel destinations", "top movies",
+                            "tech gadgets", "hrm workspace", "chatgpt 5", "ai developments",
+                            "recipe ideas", "world clock", "sports scores", "flight tickets",
+                            "online shop 24", "system monitor", "finance tracker", "developer tools",
+                            "fast network", "cloud storage", "smart search", "browser speed",
+                            "music playlist 99", "best laptop 2026", "coffee shops near me", "code refactor"
+                        ];
+
+                        let word = DICTIONARY_WORDS[rng.gen_range(0..DICTIONARY_WORDS.len())];
+                        println!("[Auto Control] Action: Human Keyboard Typing query: \"{}\"", word);
+
+                        let _ = proxy_worker.send_event(UserBrowserEvent::ClearAddressbar);
+                        thread::sleep(Duration::from_millis(rng.gen_range(200..350)));
+
+                        for ch in word.chars() {
+                            if !auto_active.load(Ordering::SeqCst) {
+                                break;
+                            }
+                            let _ = proxy_worker.send_event(UserBrowserEvent::TypeChar(ch));
+                            let key_delay = if ch == ' ' {
+                                rng.gen_range(150..300)
+                            } else {
+                                rng.gen_range(70..180)
+                            };
+                            thread::sleep(Duration::from_millis(key_delay));
+                        }
                     }
                 }
 
-                // 3. User requested random interval of 5 to 60 seconds between actions
-                let sleep_secs = rng.gen_range(5..=60);
+                if !auto_active.load(Ordering::SeqCst) {
+                    continue;
+                }
+
+                // Random dynamic interval between 5 to 30 seconds generated fresh after every event/action
+                let sleep_secs = rng.gen_range(5..=30);
+
+                // Pick the upcoming action beforehand to display in terminal
+                next_action_choice = rng.gen_range(0..4);
+                let next_action_label = match next_action_choice {
+                    0 => "mouse move",
+                    1 => "scroll page",
+                    2 => "mouse click",
+                    _ => "type text",
+                };
+
                 println!(
-                    "[Auto Control] Action finished. Next random human action in {}s (range: 5-60s)",
-                    sleep_secs
+                    "[Auto Control] Finished. Next action in {}s => {}",
+                    sleep_secs, next_action_label
                 );
 
-                // Sleep in 200ms increments so toggling OFF (F8) responds immediately without waiting up to 60s
-                for _ in 0..(sleep_secs * 5) {
+                // Live countdown per second for UI badge display (e.g. 15s => mouse click)
+                for remaining in (1..=sleep_secs).rev() {
                     if !auto_active.load(Ordering::SeqCst) {
                         break;
                     }
-                    thread::sleep(Duration::from_millis(200));
+                    let _ = proxy_worker.send_event(UserBrowserEvent::UpdateCountdown(
+                        remaining,
+                        next_action_label.to_string(),
+                    ));
+
+                    // Sleep 1 second in 100ms slices for instant stop reaction
+                    for _ in 0..10 {
+                        if !auto_active.load(Ordering::SeqCst) {
+                            break;
+                        }
+                        thread::sleep(Duration::from_millis(100));
+                    }
+                }
+
+                // Reset badge on action execution
+                if auto_active.load(Ordering::SeqCst) {
+                    let _ = proxy_worker.send_event(UserBrowserEvent::UpdateCountdown(
+                        0,
+                        next_action_label.to_string(),
+                    ));
                 }
             }
         });
@@ -1257,6 +600,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Ok(opt_tv) = toolbar_for_loop.lock() {
                     if let Some(tv) = opt_tv.as_ref() {
                         let _ = tv.evaluate_script("if (window.clearAddressbar) window.clearAddressbar();");
+                    }
+                }
+            }
+            Event::UserEvent(UserBrowserEvent::UpdateCountdown(secs, action_name)) => {
+                if let Ok(opt_tv) = toolbar_for_loop.lock() {
+                    if let Some(tv) = opt_tv.as_ref() {
+                        let json_action = serde_json::to_string(&action_name).unwrap_or_default();
+                        let script = format!("if (window.updateAutoCountdown) window.updateAutoCountdown({}, {});", secs, json_action);
+                        let _ = tv.evaluate_script(&script);
                     }
                 }
             }
@@ -1365,9 +717,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 event: WindowEvent::Moved(new_pos),
                 ..
             } => {
+                let scale = window.scale_factor();
                 if let Ok(mut r) = rect_for_loop.lock() {
-                    r.x = new_pos.x as f64;
-                    r.y = new_pos.y as f64;
+                    r.x = new_pos.x as f64 / scale;
+                    r.y = new_pos.y as f64 / scale;
                 }
             }
             Event::WindowEvent {
@@ -1379,8 +732,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let logical_h = new_size.height as f64 / scale;
 
                 if let Ok(mut r) = rect_for_loop.lock() {
-                    r.width = new_size.width as f64;
-                    r.height = new_size.height as f64;
+                    r.width = logical_w;
+                    r.height = logical_h;
                 }
 
                 // Resize toolbar
