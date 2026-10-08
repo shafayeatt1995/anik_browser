@@ -21,8 +21,7 @@ This browser enforces 4 static parameters that **never change**, regardless of t
 - **Top Right Auto Control (`F8`)**:
   - Toggled via the top-right button or pressing **`F8`**.
   - Naturally glides the actual PC mouse cursor along human-like Bézier curves.
-  - Smooth page scrolling, random text selection, and empty background clicking.
-  - Synchronous human-cadence typing in the address bar (a-z, 0-9) from realistic dictionary queries without submitting / pressing Enter.
+  - Smooth page scrolling.
   - Randomized action pauses between **5 and 30 seconds** (changes after every event).
 - **macOS Activity Tracker Compatibility**:
   - Bundled as `Brave.app` with `com.brave.Browser` bundle identifier and version `195.104` for RescueTime tracking.

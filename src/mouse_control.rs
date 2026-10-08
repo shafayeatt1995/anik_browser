@@ -160,29 +160,6 @@ pub fn human_like_move_mouse(
     }
 }
 
-// Simulate mouse click at given screen coordinates
-pub fn click_mouse_at(point: CGPoint) {
-    if let Ok(source) = CGEventSource::new(CGEventSourceStateID::CombinedSessionState) {
-        if let Ok(down) = CGEvent::new_mouse_event(
-            source.clone(),
-            CGEventType::LeftMouseDown,
-            point,
-            CGMouseButton::Left,
-        ) {
-            down.post(CGEventTapLocation::HID);
-        }
-        thread::sleep(Duration::from_millis(40));
-        if let Ok(up) = CGEvent::new_mouse_event(
-            source,
-            CGEventType::LeftMouseUp,
-            point,
-            CGMouseButton::Left,
-        ) {
-            up.post(CGEventTapLocation::HID);
-        }
-    }
-}
-
 // Simulate scroll wheel event using macOS CoreGraphics API
 pub fn scroll_mouse(delta_y: i32) {
     unsafe {

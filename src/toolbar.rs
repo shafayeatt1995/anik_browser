@@ -494,17 +494,6 @@ pub fn build_toolbar_html(initial_tab_id: u32, initial_url: &str) -> String {
       input.focus();
     }};
 
-    window.clearAddressbar = function() {{
-      input.value = "";
-      input.focus();
-    }};
-
-    window.appendChar = function(ch) {{
-      input.value += ch;
-      input.focus();
-      // Ensure cursor stays at end without selecting or submitting
-      input.selectionStart = input.selectionEnd = input.value.length;
-    }};
 
     function escapeHtml(str) {{
       if (!str) return "New Tab";

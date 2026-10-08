@@ -27,7 +27,7 @@ mod toolbar;
 use toolbar::build_toolbar_html;
 
 mod mouse_control;
-use mouse_control::{click_mouse_at, get_current_mouse_position, human_like_move_mouse, scroll_mouse};
+use mouse_control::{get_current_mouse_position, human_like_move_mouse, scroll_mouse};
 
 // Real Brave Browser / Chrome User Agent for direct native browsing
 const CHROME_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36";
@@ -38,9 +38,6 @@ const TOOLBAR_HEIGHT: f64 = 88.0;
 pub enum UserBrowserEvent {
     CreateTab(String),
     ToggleAutoControl,
-    TriggerAutoAction,
-    TypeChar(char),
-    ClearAddressbar,
     UpdateCountdown(u32, String),
 }
 
@@ -394,7 +391,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         thread::spawn(move || {
             let mut rng = rand::thread_rng();
-            let mut next_action_choice = rng.gen_range(0..4);
+            let mut next_action_choice = rng.gen_range(0..2);
 
             loop {
                 thread::sleep(Duration::from_millis(500));
@@ -417,17 +414,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let min_y = rect.y + TOOLBAR_HEIGHT + 60.0;
                 let max_y = (rect.y + rect.height - 60.0).max(min_y + 50.0);
 
-                // Helper closure to clamp any point strictly inside the safe browser viewport
-                let clamp_to_viewport = |pt: CGPoint| -> CGPoint {
-                    let clamped_x = pt.x.clamp(min_x, max_x);
-                    let clamped_y = pt.y.clamp(min_y, max_y);
-                    CGPoint::new(clamped_x, clamped_y)
-                };
-
                 // 1. Get ACTUAL current mouse position on the screen
                 let current_mouse_pt = get_current_mouse_position();
 
-                // 2. Execute scheduled action:
+                // 2. Execute scheduled action (only mouse move and scroll):
                 let action_choice = next_action_choice;
 
                 match action_choice {
@@ -439,7 +429,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         println!("[Auto Control] Action: Mouse Move to ({:.0}, {:.0}) [safe viewport]", target_x, target_y);
                         human_like_move_mouse(current_mouse_pt, target_pt, &auto_active);
                     }
-                    1 => {
+                    _ => {
                         // Action 1: Scroll Page up or down naturally
                         let scroll_dir = if rng.gen_bool(0.70) { -1 } else { 1 };
                         let total_ticks = rng.gen_range(4..14);
@@ -455,74 +445,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             thread::sleep(Duration::from_millis(rng.gen_range(30..80)));
                         }
                     }
-                    2 => {
-                        // Action 2: Click / Select Text strictly inside browser safe viewport screen
-                        if rng.gen_bool(0.6) {
-                            println!("[Auto Control] Action: Select Text on page (internal viewport DOM)");
-                            let _ = proxy_worker.send_event(UserBrowserEvent::TriggerAutoAction);
-                        } else {
-                            // Check if current mouse position is within the safe browser viewport screen
-                            let is_inside_viewport = current_mouse_pt.x >= min_x
-                                && current_mouse_pt.x <= max_x
-                                && current_mouse_pt.y >= min_y
-                                && current_mouse_pt.y <= max_y;
-
-                            let click_pt = if is_inside_viewport {
-                                clamp_to_viewport(current_mouse_pt)
-                            } else {
-                                // If cursor is outside the browser window or in another app,
-                                // ALWAYS glide the cursor inside the safe viewport before clicking!
-                                let safe_target = CGPoint::new(
-                                    rng.gen_range(min_x..max_x),
-                                    rng.gen_range(min_y..max_y),
-                                );
-                                human_like_move_mouse(current_mouse_pt, safe_target, &auto_active);
-                                safe_target
-                            };
-
-                            // Double check: NEVER click if coordinates are outside safe viewport bounds
-                            if click_pt.x >= min_x && click_pt.x <= max_x && click_pt.y >= min_y && click_pt.y <= max_y {
-                                println!(
-                                    "[Auto Control] Action: Click safe page area at ({:.0}, {:.0}) [strictly inside browser viewport]",
-                                    click_pt.x, click_pt.y
-                                );
-                                click_mouse_at(click_pt);
-                            } else {
-                                println!("[Auto Control] Safety guard: skipped click as coordinates were outside viewport");
-                            }
-                        }
-                    }
-                    _ => {
-                        // Action 3: Natural Human Keyboard Typing in Address Bar
-                        const DICTIONARY_WORDS: &[&str] = &[
-                            "weather today", "github trending", "rust programming", "coolify dashboard",
-                            "news updates", "crypto market 2026", "travel destinations", "top movies",
-                            "tech gadgets", "hrm workspace", "chatgpt 5", "ai developments",
-                            "recipe ideas", "world clock", "sports scores", "flight tickets",
-                            "online shop 24", "system monitor", "finance tracker", "developer tools",
-                            "fast network", "cloud storage", "smart search", "browser speed",
-                            "music playlist 99", "best laptop 2026", "coffee shops near me", "code refactor"
-                        ];
-
-                        let word = DICTIONARY_WORDS[rng.gen_range(0..DICTIONARY_WORDS.len())];
-                        println!("[Auto Control] Action: Human Keyboard Typing query: \"{}\"", word);
-
-                        let _ = proxy_worker.send_event(UserBrowserEvent::ClearAddressbar);
-                        thread::sleep(Duration::from_millis(rng.gen_range(200..350)));
-
-                        for ch in word.chars() {
-                            if !auto_active.load(Ordering::SeqCst) {
-                                break;
-                            }
-                            let _ = proxy_worker.send_event(UserBrowserEvent::TypeChar(ch));
-                            let key_delay = if ch == ' ' {
-                                rng.gen_range(150..300)
-                            } else {
-                                rng.gen_range(70..180)
-                            };
-                            thread::sleep(Duration::from_millis(key_delay));
-                        }
-                    }
                 }
 
                 if !auto_active.load(Ordering::SeqCst) {
@@ -533,12 +455,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let sleep_secs = rng.gen_range(5..=30);
 
                 // Pick the upcoming action beforehand to display in terminal
-                next_action_choice = rng.gen_range(0..4);
+                next_action_choice = rng.gen_range(0..2);
                 let next_action_label = match next_action_choice {
                     0 => "mouse move",
-                    1 => "scroll page",
-                    2 => "mouse click",
-                    _ => "type text",
+                    _ => "scroll page",
                 };
 
                 println!(
@@ -546,7 +466,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     sleep_secs, next_action_label
                 );
 
-                // Live countdown per second for UI badge display (e.g. 15s => mouse click)
+                // Live countdown per second for UI badge display (e.g. 15s => mouse move)
                 for remaining in (1..=sleep_secs).rev() {
                     if !auto_active.load(Ordering::SeqCst) {
                         break;
@@ -587,36 +507,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         *control_flow = ControlFlow::Wait;
 
         match event {
-            Event::UserEvent(UserBrowserEvent::TypeChar(ch)) => {
-                if let Ok(opt_tv) = toolbar_for_loop.lock() {
-                    if let Some(tv) = opt_tv.as_ref() {
-                        let json_char = serde_json::to_string(&ch.to_string()).unwrap_or_default();
-                        let script = format!("if (window.appendChar) window.appendChar({});", json_char);
-                        let _ = tv.evaluate_script(&script);
-                    }
-                }
-            }
-            Event::UserEvent(UserBrowserEvent::ClearAddressbar) => {
-                if let Ok(opt_tv) = toolbar_for_loop.lock() {
-                    if let Some(tv) = opt_tv.as_ref() {
-                        let _ = tv.evaluate_script("if (window.clearAddressbar) window.clearAddressbar();");
-                    }
-                }
-            }
             Event::UserEvent(UserBrowserEvent::UpdateCountdown(secs, action_name)) => {
                 if let Ok(opt_tv) = toolbar_for_loop.lock() {
                     if let Some(tv) = opt_tv.as_ref() {
                         let json_action = serde_json::to_string(&action_name).unwrap_or_default();
                         let script = format!("if (window.updateAutoCountdown) window.updateAutoCountdown({}, {});", secs, json_action);
                         let _ = tv.evaluate_script(&script);
-                    }
-                }
-            }
-            Event::UserEvent(UserBrowserEvent::TriggerAutoAction) => {
-                let cur_id = *active_id_for_loop.lock().unwrap();
-                if let Ok(map) = tabs_for_loop.lock() {
-                    if let Some(tab) = map.get(&cur_id) {
-                        let _ = tab.webview.evaluate_script("if (window.__autoRandomAction) window.__autoRandomAction();");
                     }
                 }
             }
